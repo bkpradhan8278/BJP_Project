@@ -1,0 +1,128 @@
+openapi: 3.0.3
+info:
+  title: Election Intelligence Command Center - POC API (conceptual)
+  version: 0.1.0
+  description: >
+    Conceptual API for the POC. All endpoints require an SSO-issued bearer token; responses are
+    filtered by role (RBAC + row-level security) and every call is written to the audit log.
+    Every data response carries `data_as_of`, `sources[]` and `quality` fields.
+servers:
+  - url: https://poc.example.invalid/api
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  schemas:
+    Provenance:
+      type: object
+      properties:
+        data_as_of: {type: string, format: date-time}
+        sources: {type: array, items: {type: string}, example: ["social.mentions_daily", "metric:engagement_rate@v3"]}
+        quality: {type: string, enum: [green, amber, red]}
+        label: {type: string, example: "DEMO DATA - SYNTHETIC"}
+    Estimate:
+      type: object
+      properties:
+        value: {type: number}
+        lower_95: {type: number}
+        upper_95: {type: number}
+        n: {type: integer}
+        n_eff: {type: integer}
+    AIAnswer:
+      type: object
+      properties:
+        facts: {type: array, items: {type: object, properties: {text: {type: string}, citations: {type: array, items: {type: string}}}}}
+        interpretation: {type: string}
+        follow_ups: {type: array, items: {type: string}}
+        confidence: {type: string, enum: [high, medium, low]}
+        refused: {type: boolean}
+        refusal_reason: {type: string}
+        provenance: {$ref: '#/components/schemas/Provenance'}
+paths:
+  /dashboard/overview:
+    get:
+      summary: Health score, domain scores, KPI strip, top changes
+      responses: {'200': {description: OK}}
+  /social/trends:
+    get:
+      summary: Daily volume, anomaly flags, sentiment with intervals, coverage index
+      parameters:
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: topic, in: query, schema: {type: string}}
+        - {name: platform, in: query, schema: {type: string}}
+        - {name: language, in: query, schema: {type: string}}
+      responses: {'200': {description: OK}}
+  /media/intelligence:
+    get:
+      summary: Volume by outlet type, tone, issues, story threads
+      responses: {'200': {description: OK}}
+  /survey/summary:
+    get:
+      summary: Weighted estimates with MoE and significance vs previous wave
+      parameters:
+        - {name: wave, in: query, schema: {type: integer}}
+        - {name: question, in: query, schema: {type: string}}
+      responses: {'200': {description: OK}}
+  /field/operations:
+    get:
+      summary: Completion, coverage, on-time reporting, bottlenecks (zone/block aggregates)
+      responses: {'200': {description: OK}}
+  /digital/scorecard:
+    get:
+      summary: Digital Performance Scorecard vs prior period and targets
+      responses: {'200': {description: OK}}
+  /alerts:
+    get:
+      summary: Alert queue
+      parameters:
+        - {name: severity, in: query, schema: {type: string, enum: [critical, high, medium, low]}}
+        - {name: status, in: query, schema: {type: string, enum: [open, acknowledged, closed]}}
+      responses: {'200': {description: OK}}
+  /alerts/{id}/ack:
+    post:
+      summary: Acknowledge, escalate or close an alert with a note
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: OK}}
+  /compliance/items:
+    get:
+      summary: Content items with approval, certification, AI-label and spend status
+      responses: {'200': {description: OK}}
+  /data-quality/sources:
+    get:
+      summary: Source registry health (freshness, tests, score)
+      responses: {'200': {description: OK}}
+  /metrics/{metric_id}:
+    get:
+      summary: Metric-store definition and values
+      parameters: [{name: metric_id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: OK}}
+  /lineage/{metric_id}:
+    get:
+      summary: Source-to-metric lineage graph
+      parameters: [{name: metric_id, in: path, required: true, schema: {type: string}}]
+      responses: {'200': {description: OK}}
+  /reports/daily/{date}:
+    get:
+      summary: Rendered Daily War-Room Report
+      parameters: [{name: date, in: path, required: true, schema: {type: string, format: date}}]
+      responses: {'200': {description: OK}}
+  /ai/query:
+    post:
+      summary: Ask the AI Analyst (grounded; answers only from approved data)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question: {type: string, example: "What changed in the last 24 hours?"}
+                language: {type: string, example: en}
+      responses:
+        '200':
+          description: Answer with facts, interpretation, citations, data_as_of and confidence (or a policy refusal)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AIAnswer'}
